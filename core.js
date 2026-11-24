@@ -19,7 +19,17 @@ let db = loadDb();
 function loadDb() {
   try {
     const d = JSON.parse(localStorage.getItem(STORE_KEY));
-    if (d && Array.isArray(d.leads) && Array.isArray(d.deals)) return d;
+    if (d && Array.isArray(d.leads) && Array.isArray(d.deals)) {
+      // Stadt für ältere Einträge aus der Adresse in den Notizen ableiten (z. B. „10249 Berlin“)
+      for (const it of [...d.leads, ...d.deals]) {
+        if (it.city) continue;
+        for (const n of it.notes || []) {
+          const m = /\b\d{5}\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß-]+)/.exec(n.text || '');
+          if (m) { it.city = m[1]; break; }
+        }
+      }
+      return d;
+    }
   } catch { /* leer */ }
   return { leads: [], deals: [] };
 }
@@ -122,13 +132,14 @@ function csvToLeads(text) {
   col.phone = pick(/telefon|phone|handy|mobil|\btel\b/);
   col.website = pick(/website|webseite|homepage|url|\bweb\b/);
   col.note = pick(/notiz|note|bemerkung|kommentar/);
+  col.city = pick(/stadt|\bort\b|city|gemeinde/);
   col.name = pick(/titel|title|firma|organisation|organization|unternehmen/);
   col.contact = pick(/ansprechpartner|person|kontakt|name/);
   if (col.name < 0) { col.name = col.contact; col.contact = -1; }
   if (col.name < 0) col.name = pick(/lead/);
   return rows.slice(1).map((r) => {
     const g = (k) => (col[k] >= 0 ? (r[col[k]] || '').trim() : '');
-    const lead = { id: uid(), name: g('name') || g('contact'), phone: g('phone'), website: g('website'), email: g('email'), callback: null, notes: [], created: new Date().toISOString() };
+    const lead = { id: uid(), name: g('name') || g('contact'), city: g('city'), phone: g('phone'), website: g('website'), email: g('email'), callback: null, notes: [], created: new Date().toISOString() };
     if (g('contact') && g('name')) addNote(lead, 'Ansprechpartner: ' + g('contact'));
     if (g('note')) addNote(lead, g('note'));
     return lead;

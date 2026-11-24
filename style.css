@@ -99,6 +99,9 @@ table.grid { width: 100%; border-collapse: collapse; }
 .grid td.nowrap { white-space: nowrap; }
 .grid .col-note { min-width: 220px; max-width: 340px; }
 .dash { color: #b5bec8; }
+.city-tag { background: #eef3f8; border: 1px solid #dbe4ee; color: #34506b; border-radius: 20px; padding: 3px 9px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.city-tag:hover { background: #e0eaf5; }
+.city-select { padding-left: 12px; background-image: none; min-width: 150px; cursor: pointer; }
 .empty { padding: 40px; text-align: center; color: var(--muted); }
 
 /* Notes */

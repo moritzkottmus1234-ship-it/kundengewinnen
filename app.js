@@ -63,7 +63,8 @@ function openModal(html) { const m = $('#modal'); m.innerHTML = `<div class="mod
 function newLeadModal() {
   openModal(`<h2>Neuer Lead</h2>
     <form id="leadForm" class="form">
-      <label class="full">Name *<input name="name" required placeholder="z. B. Trattoria da Mario"></label>
+      <label>Name *<input name="name" required placeholder="z. B. Trattoria da Mario"></label>
+      <label>Stadt<input name="city" list="cityOptions" placeholder="z. B. Köln" value="${esc(state.city)}"></label>
       <label>Telefon<input name="phone" type="tel"></label>
       <label>E-Mail<input name="email" type="email"></label>
       <label class="full">Website<input name="website" placeholder="www.beispiel.de"></label>
@@ -79,7 +80,7 @@ function newLeadModal() {
 function saveLead() {
   const f = $('#leadForm'); if (!f.reportValidity()) return;
   const v = Object.fromEntries(new FormData(f));
-  const lead = { id: uid(), name: v.name.trim(), phone: v.phone.trim(), email: v.email.trim(), website: v.website.trim(), notes: [], created: new Date().toISOString(),
+  const lead = { id: uid(), name: v.name.trim(), city: v.city.trim(), phone: v.phone.trim(), email: v.email.trim(), website: v.website.trim(), notes: [], created: new Date().toISOString(),
     callback: v.cbPreset === 'custom' ? (v.cbCustom || null) : v.cbPreset ? presetDate(v.cbPreset) : null };
   if (v.note.trim()) addNote(lead, v.note.trim());
   db.leads.push(lead);
@@ -134,6 +135,7 @@ document.addEventListener('click', (e) => {
   switch (act) {
     case 'go': state.view = el.dataset.view; render(); break;
     case 'filter': state.filter = el.dataset.filter; render(); break;
+    case 'cityFilter': state.city = el.dataset.city; render(); toast('Nur ' + state.city + ' – „Alle Städte“ wählen zum Zurücksetzen'); break;
     case 'dealTab': state.dealTab = el.dataset.tab; render(); break;
     case 'newLead': newLeadModal(); break;
     case 'saveLead': saveLead(); break;
@@ -203,6 +205,7 @@ document.addEventListener('input', (e) => { if (e.target.id === 'search') { stat
 
 /* Felder im Detail-Panel speichern */
 document.addEventListener('change', (e) => {
+  if (e.target.id === 'cityFilter') { state.city = e.target.value; render(); return; }
   const f = e.target.dataset?.field; if (!f) return;
   const it = currentItem(); if (!it) return;
   let v = e.target.value.trim();
@@ -248,10 +251,19 @@ $('#fileCsv').addEventListener('change', async (e) => {
   if (text.includes('�')) text = new TextDecoder('windows-1252').decode(await file.arrayBuffer());
   const leads = csvToLeads(text);
   if (!leads.length) return toast('Keine Leads in der Datei gefunden', true);
-  const known = new Set(db.leads.map((l) => (l.name + '|' + l.phone).toLowerCase()));
-  const fresh = leads.filter((l) => !known.has((l.name + '|' + l.phone).toLowerCase()));
+  const key = (l) => (l.name + '|' + l.phone).toLowerCase();
+  const known = new Map([...db.leads, ...db.deals].map((l) => [key(l), l]));
+  const fresh = []; let updated = 0;
+  for (const l of leads) {
+    const old = known.get(key(l));
+    if (!old) { fresh.push(l); continue; }
+    // vorhandene Einträge: fehlende Felder (z. B. Stadt) ergänzen
+    let ch = false;
+    for (const f of ['city', 'website', 'email']) if (!old[f] && l[f]) { old[f] = l[f]; ch = true; }
+    if (ch) updated++;
+  }
   db.leads.push(...fresh);
-  commit(`${fresh.length} Leads importiert${leads.length > fresh.length ? ` (${leads.length - fresh.length} doppelte übersprungen)` : ''}`);
+  commit(`${fresh.length} Leads importiert${leads.length > fresh.length ? ` (${leads.length - fresh.length} schon vorhanden${updated ? `, davon ${updated} ergänzt` : ''})` : ''}`);
 });
 $('#fileJson').addEventListener('change', async (e) => {
   const file = e.target.files[0]; e.target.value = ''; if (!file) return;
