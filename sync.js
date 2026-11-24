@@ -3,7 +3,8 @@
 
 const SYNC_CFG = { owner: 'moritzkottmus1234-ship-it', repo: 'kundengewinnen-daten', path: 'data.json' };
 const TOKEN_KEY = 'kg_sync_token';
-const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new';
+// Vorausgefülltes GitHub-Formular (Name, Ablauf 1 Jahr, nur Lese-/Schreibrecht auf Dateien)
+const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new?name=Kundengewinnen&description=Abgleich+der+Kundengewinnen-App+(nur+Repo+kundengewinnen-daten)&target_name=moritzkottmus1234-ship-it&expires_in=365&contents=write';
 
 const Sync = (() => {
   let timer = null, running = false, again = false;
@@ -65,7 +66,26 @@ const Sync = (() => {
     // Grabsteine älter als 180 Tage aufräumen
     const limit = Date.now() - 180 * 864e5;
     for (const id in deleted) if (deleted[id] < limit) delete deleted[id];
-    return { ...remote, ...local, leads: pick(local.leads, remote.leads), deals: pick(local.deals, remote.deals), deleted };
+    const deals = pick(local.deals, remote.deals);
+    return { ...remote, ...local, leads: dedupe(pick(local.leads, remote.leads), deals), deals, deleted };
+  }
+
+  /* Doppelte Firmen (gleicher Name + Telefon, z. B. auf zwei Geräten importiert) zusammenfassen.
+     Gewinner: neuere Änderung → mehr Notizen/Rückruf → feste Reihenfolge (damit alle Geräte gleich entscheiden). */
+  const dupKey = (it) => ((it.name || '') + '|' + (it.phone || '')).trim().toLowerCase();
+  const richness = (it) => (it.notes || []).filter((n) => !n.system).length + (it.callback ? 2 : 0);
+  const better = (a, b) => ((a.updated || 0) - (b.updated || 0)) || (richness(a) - richness(b)) || (a.id < b.id ? 1 : -1);
+  function dedupe(leads, deals) {
+    const dealKeys = new Set(deals.map(dupKey));
+    const m = new Map();
+    for (const l of leads) {
+      const k = dupKey(l);
+      if (k === '|') { m.set('#' + l.id, l); continue; }
+      if (dealKeys.has(k)) continue; // ist schon ein Deal geworden
+      const o = m.get(k);
+      if (!o || better(l, o) > 0) m.set(k, l);
+    }
+    return [...m.values()];
   }
 
   function setStatus(s, err = '') {

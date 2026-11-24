@@ -29,6 +29,11 @@ function syncModal() {
         <div class="box" id="syncStateLine">${esc(syncStateText().long)}</div>
         <p class="muted">Jede Änderung wird automatisch in deinem privaten GitHub-Repo „${SYNC_CFG.repo}“ gespeichert. Alle Geräte, auf denen der Schlüssel eingetragen ist, sehen dieselben Leads und Deals.</p>
         <div class="row"><button class="btn btn-primary" data-act="syncNow">Jetzt abgleichen</button><button class="btn btn-danger" data-act="syncOff">Auf diesem Gerät trennen</button></div>
+        <div class="box">
+          <b>📱 Handy (oder weiteres Gerät) verbinden</b>
+          <p style="margin:6px 0 10px">Schick dir diesen Link selbst (z. B. WhatsApp an dich, E-Mail), öffne ihn am Handy und melde dich an – fertig. Der Link enthält deinen Schlüssel, also <b>nur an dich selbst</b> schicken.</p>
+          <div class="row">${navigator.share ? '<button class="btn btn-primary" data-act="syncShare">Link teilen</button>' : ''}<button class="btn" data-act="syncCopy">Link kopieren</button></div>
+        </div>
         <hr style="border:0;border-top:1px solid var(--line);width:100%">
         <div class="row"><button class="btn" data-act="backup">⬇ Backup sichern</button><button class="btn" data-act="restore">⬆ Backup laden</button><button class="btn" data-act="logout">⎋ Abmelden</button></div>
       </div>
@@ -39,25 +44,37 @@ function syncModal() {
     <div class="modal-body">
       <p>Damit Handy und PC dieselben Leads sehen, speichert die App alles in deinem <b>privaten</b> GitHub-Repo „${SYNC_CFG.repo}“. Dafür brauchst du <b>einmalig</b> einen Zugangsschlüssel:</p>
       <ol>
-        <li><a href="${TOKEN_URL}" target="_blank" rel="noopener"><b>Hier bei GitHub einen neuen Schlüssel anlegen</b></a> (angemeldet als ${SYNC_CFG.owner}).</li>
-        <li><b>Token name:</b> Kundengewinnen – <b>Expiration:</b> z. B. 1 Jahr.</li>
-        <li><b>Repository access:</b> „Only select repositories“ → <b>${SYNC_CFG.repo}</b> auswählen.</li>
-        <li><b>Permissions → Repository permissions → Contents:</b> auf „Read and write“ stellen.</li>
+        <li><a href="${TOKEN_URL}" target="_blank" rel="noopener"><b>Hier klicken – das GitHub-Formular ist schon ausgefüllt</b></a> (angemeldet als ${SYNC_CFG.owner}).</li>
+        <li>Nur eins selbst einstellen: <b>Repository access</b> → „Only select repositories“ → <b>${SYNC_CFG.repo}</b> auswählen.</li>
+        <li>Prüfen: unter Permissions steht <b>Contents: Read and write</b> (ist vorausgewählt).</li>
         <li>Ganz unten <b>„Generate token“</b> klicken und den Schlüssel (beginnt mit <code>github_pat_</code>) kopieren.</li>
       </ol>
       <label>Schlüssel hier einfügen<input id="syncToken" type="password" autocomplete="off" placeholder="github_pat_…"></label>
-      <p class="muted">Auf jedem Gerät (PC, Handy) einmal eintragen. Tipp: Schlüssel in deinen Notizen oder im Passwort-Manager speichern, dann kannst du ihn am Handy einfach einfügen.</p>
+      <p class="muted">Nur am ersten Gerät nötig. Danach zeigt dir die App einen <b>Handy-Link</b> – den schickst du dir z. B. per WhatsApp, tippst ihn am Handy an und das Handy ist verbunden.</p>
       <p class="error" id="syncError" hidden></p>
     </div>
     <div class="modal-foot"><button class="btn" data-act="closeModal">Abbrechen</button><button class="btn btn-primary" data-act="syncConnect">Verbinden</button></div>`);
 }
+function deviceLink() {
+  return location.origin + location.pathname + '#verbinden=' + encodeURIComponent(localStorage.getItem(TOKEN_KEY) || '');
+}
+/* Handy-Link: Schlüssel aus „#verbinden=…“ übernehmen und sofort aus der Adresszeile entfernen */
+let linkedViaUrl = false;
+(() => {
+  const m = /[#&]verbinden=([^&]+)/.exec(location.hash);
+  if (!m) return;
+  const t = decodeURIComponent(m[1]);
+  if (/^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$/.test(t)) { localStorage.setItem(TOKEN_KEY, t); localStorage.setItem('kg_sync_hint', '1'); linkedViaUrl = true; }
+  history.replaceState(null, '', location.pathname + location.search);
+})();
 async function syncConnect() {
   const btn = $('[data-act="syncConnect"]'), err = $('#syncError');
   btn.disabled = true; btn.textContent = 'Verbinde …'; err.hidden = true;
   try {
     await Sync.connect($('#syncToken').value);
-    closeModal(); render();
+    render();
     toast(`☁ Abgleich eingerichtet – ${db.leads.length} Leads, ${db.deals.length} Deals`);
+    syncModal(); // gleich den Handy-Link anzeigen
   } catch (e) {
     err.textContent = e.message; err.hidden = false;
     btn.disabled = false; btn.textContent = 'Verbinden';
@@ -202,6 +219,14 @@ document.addEventListener('click', (e) => {
     case 'syncSetup': closePopover(); syncModal(); break;
     case 'syncConnect': syncConnect(); break;
     case 'syncNow': Sync.run(); break;
+    case 'syncShare': navigator.share({ title: 'Kundengewinnen verbinden', url: deviceLink() }).catch(() => {}); break;
+    case 'syncCopy': {
+      const link = deviceLink();
+      (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(
+        () => toast('Link kopiert – jetzt an dich selbst schicken'),
+        () => prompt('Link kopieren:', link));
+      break;
+    }
     case 'syncOff': if (confirm('Abgleich auf diesem Gerät trennen? Die Daten bleiben auf diesem Gerät und im Repo erhalten.')) { Sync.disconnect(); closeModal(); toast('Abgleich getrennt'); } break;
     case 'rowDelete': {
       // 1. Klick: Knopf wird rot „Löschen?“ – 2. Klick: wirklich löschen
@@ -407,6 +432,7 @@ function startApp() {
   Sync.onChange(updateSyncBadge);
   updateSyncBadge();
   Sync.start();
+  if (linkedViaUrl) { linkedViaUrl = false; toast('📱 Gerät verbunden – Daten werden geladen …'); }
   if (!Sync.enabled() && !localStorage.getItem('kg_sync_hint')) {
     localStorage.setItem('kg_sync_hint', '1');
     setTimeout(syncModal, 600);
