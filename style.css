@@ -99,6 +99,13 @@ table.grid { width: 100%; border-collapse: collapse; }
 .grid td.nowrap { white-space: nowrap; }
 .grid .col-note { min-width: 220px; max-width: 340px; }
 .dash { color: #b5bec8; }
+.row-acts { white-space: nowrap; }
+.row-acts .btn + .btn { margin-left: 6px; }
+.btn-del { color: #9aa5b1; border-color: transparent; background: transparent; }
+.btn-del:hover { color: var(--red); background: var(--red-bg); border-color: #f6c3c3; }
+.btn-del.armed { background: var(--red); color: #fff; border-color: var(--red); font-weight: 700; }
+.btn-del.armed:hover { background: #b91c1c; color: #fff; }
+.toast .undo { margin-left: 12px; background: #fff; color: var(--text); border: 0; border-radius: 6px; padding: 3px 10px; font-weight: 600; cursor: pointer; }
 .city-tag { background: #eef3f8; border: 1px solid #dbe4ee; color: #34506b; border-radius: 20px; padding: 3px 9px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .city-tag:hover { background: #e0eaf5; }
 .city-select { padding-left: 12px; background-image: none; min-width: 150px; cursor: pointer; }
@@ -235,5 +242,6 @@ table.grid { width: 100%; border-collapse: collapse; }
   .grid td:first-child { font-size: 16px; }
   .grid .col-note { max-width: none; }
   .cb-item { grid-template-columns: 1fr; }
+  .toasts { bottom: 78px; left: 12px; right: 12px; }
   .cb-item .acts { justify-content: flex-start; }
 }

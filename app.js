@@ -8,6 +8,14 @@ function toast(msg, alert = false) {
   $('#toasts').append(t);
   setTimeout(() => t.remove(), alert ? 7000 : 3200);
 }
+let lastDeleted = null;
+function toastUndo(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = `${esc(msg)}<button class="undo" data-act="undoDelete">Rückgängig</button>`;
+  $('#toasts').append(t);
+  setTimeout(() => t.remove(), 8000);
+}
 function commit(msg) { saveDb(); render(); if (msg) toast(msg); }
 
 /* ---------- Popover (Rückruf) ---------- */
@@ -135,6 +143,29 @@ document.addEventListener('click', (e) => {
   switch (act) {
     case 'go': state.view = el.dataset.view; render(); break;
     case 'filter': state.filter = el.dataset.filter; render(); break;
+    case 'rowDelete': {
+      // 1. Klick: Knopf wird rot „Löschen?“ – 2. Klick: wirklich löschen
+      if (!el.classList.contains('armed')) {
+        $$('.btn-del.armed').forEach((b) => { b.classList.remove('armed'); b.textContent = '🗑'; });
+        el.classList.add('armed'); el.textContent = 'Löschen?';
+        clearTimeout(el._t); el._t = setTimeout(() => { el.classList.remove('armed'); el.textContent = '🗑'; }, 4000);
+        break;
+      }
+      const idx = db.leads.findIndex((x) => x.id === id); if (idx < 0) break;
+      const [gone] = db.leads.splice(idx, 1);
+      lastDeleted = { lead: gone, idx };
+      if (state.detail && state.detail.id === id) state.detail = null;
+      saveDb(); render();
+      toastUndo(`„${gone.name || 'Lead'}“ gelöscht`);
+      break;
+    }
+    case 'undoDelete': {
+      if (!lastDeleted) break;
+      db.leads.splice(Math.min(lastDeleted.idx, db.leads.length), 0, lastDeleted.lead);
+      const n = lastDeleted.lead.name; lastDeleted = null;
+      el.closest('.toast')?.remove();
+      commit(`„${n}“ wiederhergestellt`); break;
+    }
     case 'deleteCity': {
       const c = state.city; if (!c) break;
       const n = db.leads.filter((l) => cityOf(l) === c).length;

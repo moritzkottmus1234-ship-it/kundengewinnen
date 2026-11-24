@@ -86,7 +86,7 @@ function renderLeads() {
           <td data-label="E-Mail">${l.email ? `<a href="mailto:${esc(l.email)}">${esc(l.email)}</a>` : DASH}</td>
           <td data-label="Notiz" class="col-note">${noteCell(l, 'lead')}</td>
           <td data-label="Rückruf">${cbBadge(l, 'lead')}</td>
-          <td data-label=""><button class="btn btn-sm btn-deal" data-act="convert" data-id="${l.id}" title="In Deal umwandeln">→ Deal</button></td>
+          <td data-label="" class="row-acts"><button class="btn btn-sm btn-deal" data-act="convert" data-id="${l.id}" title="In Deal umwandeln">→ Deal</button><button class="btn btn-sm btn-del" data-act="rowDelete" data-id="${l.id}" title="Lead löschen (zum Bestätigen nochmal klicken)" aria-label="Lead löschen">🗑</button></td>
         </tr>`).join('')}
       </tbody>
     </table>` : `<div class="empty">${all.length ? 'Keine Leads für diesen Filter.' : 'Noch keine Leads. Lege oben rechts den ersten Lead an oder importiere eine CSV-Datei.'}</div>`}
