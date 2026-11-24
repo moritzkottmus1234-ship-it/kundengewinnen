@@ -42,7 +42,34 @@ function loadDb() {
   } catch { /* leer */ }
   return { leads: [], deals: [] };
 }
-function saveDb() { localStorage.setItem(STORE_KEY, JSON.stringify(db)); }
+/* Änderungen erkennen: jedes geänderte Element bekommt einen Zeitstempel,
+   gelöschte Elemente einen „Grabstein“ – damit Handy und PC sauber zusammengeführt werden. */
+const itemKey = (it) => { const { updated, notifiedFor, ...rest } = it; return JSON.stringify(rest); };
+function snapshotOf(d) { const m = new Map(); for (const it of [...d.leads, ...d.deals]) m.set(it.id, itemKey(it)); return m; }
+let snap = snapshotOf(db);
+function stampChanges() {
+  const now = Date.now(), cur = new Map();
+  db.deleted = db.deleted || {};
+  for (const it of [...db.leads, ...db.deals]) {
+    const k = itemKey(it);
+    if (snap.get(it.id) !== k) it.updated = now;
+    cur.set(it.id, k);
+  }
+  for (const id of snap.keys()) if (!cur.has(id)) db.deleted[id] = now;
+  snap = cur;
+}
+function saveDb() {
+  stampChanges();
+  localStorage.setItem(STORE_KEY, JSON.stringify(db));
+  if (typeof Sync !== 'undefined') Sync.schedule();
+}
+/* Daten von außen übernehmen (z. B. nach dem Abgleich) – ohne neue Zeitstempel */
+function replaceDb(next) {
+  db = next;
+  db.deleted = db.deleted || {};
+  snap = snapshotOf(db);
+  localStorage.setItem(STORE_KEY, JSON.stringify(db));
+}
 function findItem(type, id) { return (type === 'lead' ? db.leads : db.deals).find((x) => x.id === id); }
 
 /* ---------- Login ---------- */

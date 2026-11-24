@@ -99,6 +99,19 @@ table.grid { width: 100%; border-collapse: collapse; }
 .grid td.nowrap { white-space: nowrap; }
 .grid .col-note { min-width: 220px; max-width: 340px; }
 .dash { color: #b5bec8; }
+.topbar { display: flex; justify-content: flex-end; margin: -8px 0 10px; }
+.sync-badge { border: 1px solid var(--line); background: #fff; border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--muted); }
+.sync-badge.ok { color: #166534; background: #f0fbf4; border-color: #b7e4c7; }
+.sync-badge.off { color: #8a4b00; background: var(--orange-bg); border-color: #f5cf8a; }
+.sync-badge.error { color: #fff; background: var(--red); border-color: var(--red); }
+.sync-badge.busy { color: #1e3f99; background: var(--blue-bg); border-color: #c4d6ff; }
+.modal-body { padding: 16px 20px; display: grid; gap: 12px; }
+.modal-body p { margin: 0; }
+.modal-body ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.modal-body label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 500; }
+.modal-body input { padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; color: var(--text); }
+.modal-body .box { background: #f6f8fa; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.modal-body .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .row-acts { white-space: nowrap; }
 .row-acts .btn + .btn { margin-left: 6px; }
 .btn-del { color: #9aa5b1; border-color: transparent; background: transparent; }

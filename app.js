@@ -8,6 +8,62 @@ function toast(msg, alert = false) {
   $('#toasts').append(t);
   setTimeout(() => t.remove(), alert ? 7000 : 3200);
 }
+/* ---------- Abgleich (Handy/PC) ---------- */
+function syncStateText() {
+  const s = Sync.status;
+  if (!Sync.enabled()) return { cls: 'off', txt: '☁ Abgleich einrichten', long: 'Nicht eingerichtet – Daten liegen nur auf diesem Gerät.' };
+  if (s === 'busy') return { cls: 'busy', txt: '⏳ Speichert …', long: 'Wird gerade abgeglichen …' };
+  if (s === 'error') return { cls: 'error', txt: '⚠ Abgleich-Fehler', long: 'Fehler: ' + Sync.lastErr };
+  const t = Sync.lastOk ? fmtTime(Sync.lastOk) : '';
+  return { cls: 'ok', txt: '☁ Abgeglichen ' + t, long: `Alles gespeichert und abgeglichen (zuletzt ${t} Uhr).` };
+}
+function updateSyncBadge() {
+  const st = syncStateText(), b = $('#syncBadge');
+  b.className = 'sync-badge ' + st.cls; b.textContent = st.txt; b.title = st.long;
+  const m = $('#syncStateLine'); if (m) m.textContent = st.long;
+}
+function syncModal() {
+  if (Sync.enabled()) {
+    openModal(`<h2>☁ Abgleich zwischen Handy und PC</h2>
+      <div class="modal-body">
+        <div class="box" id="syncStateLine">${esc(syncStateText().long)}</div>
+        <p class="muted">Jede Änderung wird automatisch in deinem privaten GitHub-Repo „${SYNC_CFG.repo}“ gespeichert. Alle Geräte, auf denen der Schlüssel eingetragen ist, sehen dieselben Leads und Deals.</p>
+        <div class="row"><button class="btn btn-primary" data-act="syncNow">Jetzt abgleichen</button><button class="btn btn-danger" data-act="syncOff">Auf diesem Gerät trennen</button></div>
+        <hr style="border:0;border-top:1px solid var(--line);width:100%">
+        <div class="row"><button class="btn" data-act="backup">⬇ Backup sichern</button><button class="btn" data-act="restore">⬆ Backup laden</button><button class="btn" data-act="logout">⎋ Abmelden</button></div>
+      </div>
+      <div class="modal-foot"><button class="btn" data-act="closeModal">Schließen</button></div>`);
+    return;
+  }
+  openModal(`<h2>☁ Abgleich zwischen Handy und PC einrichten</h2>
+    <div class="modal-body">
+      <p>Damit Handy und PC dieselben Leads sehen, speichert die App alles in deinem <b>privaten</b> GitHub-Repo „${SYNC_CFG.repo}“. Dafür brauchst du <b>einmalig</b> einen Zugangsschlüssel:</p>
+      <ol>
+        <li><a href="${TOKEN_URL}" target="_blank" rel="noopener"><b>Hier bei GitHub einen neuen Schlüssel anlegen</b></a> (angemeldet als ${SYNC_CFG.owner}).</li>
+        <li><b>Token name:</b> Kundengewinnen – <b>Expiration:</b> z. B. 1 Jahr.</li>
+        <li><b>Repository access:</b> „Only select repositories“ → <b>${SYNC_CFG.repo}</b> auswählen.</li>
+        <li><b>Permissions → Repository permissions → Contents:</b> auf „Read and write“ stellen.</li>
+        <li>Ganz unten <b>„Generate token“</b> klicken und den Schlüssel (beginnt mit <code>github_pat_</code>) kopieren.</li>
+      </ol>
+      <label>Schlüssel hier einfügen<input id="syncToken" type="password" autocomplete="off" placeholder="github_pat_…"></label>
+      <p class="muted">Auf jedem Gerät (PC, Handy) einmal eintragen. Tipp: Schlüssel in deinen Notizen oder im Passwort-Manager speichern, dann kannst du ihn am Handy einfach einfügen.</p>
+      <p class="error" id="syncError" hidden></p>
+    </div>
+    <div class="modal-foot"><button class="btn" data-act="closeModal">Abbrechen</button><button class="btn btn-primary" data-act="syncConnect">Verbinden</button></div>`);
+}
+async function syncConnect() {
+  const btn = $('[data-act="syncConnect"]'), err = $('#syncError');
+  btn.disabled = true; btn.textContent = 'Verbinde …'; err.hidden = true;
+  try {
+    await Sync.connect($('#syncToken').value);
+    closeModal(); render();
+    toast(`☁ Abgleich eingerichtet – ${db.leads.length} Leads, ${db.deals.length} Deals`);
+  } catch (e) {
+    err.textContent = e.message; err.hidden = false;
+    btn.disabled = false; btn.textContent = 'Verbinden';
+  }
+}
+
 let lastDeleted = null;
 function toastUndo(msg) {
   const t = document.createElement('div');
@@ -143,6 +199,10 @@ document.addEventListener('click', (e) => {
   switch (act) {
     case 'go': state.view = el.dataset.view; render(); break;
     case 'filter': state.filter = el.dataset.filter; render(); break;
+    case 'syncSetup': closePopover(); syncModal(); break;
+    case 'syncConnect': syncConnect(); break;
+    case 'syncNow': Sync.run(); break;
+    case 'syncOff': if (confirm('Abgleich auf diesem Gerät trennen? Die Daten bleiben auf diesem Gerät und im Repo erhalten.')) { Sync.disconnect(); closeModal(); toast('Abgleich getrennt'); } break;
     case 'rowDelete': {
       // 1. Klick: Knopf wird rot „Löschen?“ – 2. Klick: wirklich löschen
       if (!el.classList.contains('armed')) {
@@ -344,6 +404,13 @@ function startApp() {
   saveDb();
   render();
   setInterval(checkDue, 30000);
+  Sync.onChange(updateSyncBadge);
+  updateSyncBadge();
+  Sync.start();
+  if (!Sync.enabled() && !localStorage.getItem('kg_sync_hint')) {
+    localStorage.setItem('kg_sync_hint', '1');
+    setTimeout(syncModal, 600);
+  }
 }
 $('#loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();

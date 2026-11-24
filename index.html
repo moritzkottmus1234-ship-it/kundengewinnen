@@ -33,12 +33,14 @@
       <button class="nav-item" data-view="deals"><span class="ico">💼</span><span class="nav-label">Deals</span><span class="count" id="cntDeals">0</span></button>
       <button class="nav-item" data-view="callbacks"><span class="ico">📞</span><span class="nav-label">Rückrufe</span><span class="count count-alert" id="cntDue" hidden>0</span></button>
       <div class="nav-spacer"></div>
+      <button class="nav-item nav-small" data-act="syncSetup"><span class="ico">☁</span><span class="nav-label">Abgleich (Handy/PC)</span></button>
       <button class="nav-item nav-small" data-act="backup"><span class="ico">⬇</span><span class="nav-label">Backup sichern</span></button>
       <button class="nav-item nav-small" data-act="restore"><span class="ico">⬆</span><span class="nav-label">Backup laden</span></button>
       <button class="nav-item nav-small" data-act="logout"><span class="ico">⎋</span><span class="nav-label">Abmelden</span></button>
     </nav>
 
     <main class="main">
+      <div class="topbar"><button id="syncBadge" class="sync-badge" data-act="syncSetup" type="button">☁ Abgleich einrichten</button></div>
       <div id="dueBanner" class="due-banner" hidden></div>
       <div id="view"></div>
     </main>
@@ -57,6 +59,7 @@
 
   <script src="core.js"></script>
   <script src="views.js"></script>
+  <script src="sync.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
