@@ -60,6 +60,7 @@ function renderLeads() {
     <h1>Leads</h1>
     <input class="search" id="search" placeholder="Suchen (Name, Stadt, Telefon, Notiz …)" value="${esc(state.search)}">
     ${citySelect()}
+    ${state.city ? `<button class="btn btn-danger" data-act="deleteCity" title="Alle Leads dieser Stadt löschen">🗑 Alle aus ${esc(state.city)} löschen</button>` : ''}
     <span class="spacer"></span>
     <button class="btn" data-act="importCsv">CSV importieren</button>
     <button class="btn btn-primary" data-act="newLead">+ Lead</button>

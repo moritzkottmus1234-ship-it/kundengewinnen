@@ -135,6 +135,14 @@ document.addEventListener('click', (e) => {
   switch (act) {
     case 'go': state.view = el.dataset.view; render(); break;
     case 'filter': state.filter = el.dataset.filter; render(); break;
+    case 'deleteCity': {
+      const c = state.city; if (!c) break;
+      const n = db.leads.filter((l) => cityOf(l) === c).length;
+      if (!n || !confirm(`Alle ${n} Leads aus ${c} löschen?\n\nDeals bleiben erhalten. Das lässt sich nicht rückgängig machen (außer über ein vorher gesichertes Backup).`)) break;
+      db.leads = db.leads.filter((l) => cityOf(l) !== c);
+      state.city = ''; state.detail = null;
+      commit(`${n} Leads aus ${c} gelöscht`); break;
+    }
     case 'cityFilter': state.city = el.dataset.city; render(); toast('Nur ' + state.city + ' – „Alle Städte“ wählen zum Zurücksetzen'); break;
     case 'dealTab': state.dealTab = el.dataset.tab; render(); break;
     case 'newLead': newLeadModal(); break;
@@ -298,6 +306,10 @@ function startApp() {
   $('#login').hidden = true; $('#app').hidden = false;
   // Beim ersten Start: bereits überfällige nicht alle als Popup melden
   allOpenItems().forEach(({ item }) => { if (item.callback && cbStatus(item.callback) === 'overdue') item.notifiedFor = item.callback; });
+  if (db.cleanup_berlin_2026_11 > 0 && !db.cleanup_berlin_shown) {
+    db.cleanup_berlin_shown = true;
+    setTimeout(() => toast(`${db.cleanup_berlin_2026_11} Berlin-Leads wurden entfernt`), 300);
+  }
   saveDb();
   render();
   setInterval(checkDue, 30000);

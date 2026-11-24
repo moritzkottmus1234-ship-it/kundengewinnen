@@ -28,6 +28,15 @@ function loadDb() {
           if (m) { it.city = m[1]; break; }
         }
       }
+      // Einmalige Bereinigung (Wunsch vom 24.11.2026): die 10 importierten Berlin-Leads entfernen.
+      // Deals bleiben unangetastet; läuft pro Browser nur ein einziges Mal.
+      if (!d.cleanup_berlin_2026_11) {
+        const BERLIN = ['pension eberty', 'pension abc', 'restaurant kök', 'restaurant föllerei', 'restaurant merold', 'pension brinn', 'pension am tierpark', 'pension wedding', 'atak bäckerei', 'bäckerei frank walzer'];
+        const before = d.leads.length;
+        d.leads = d.leads.filter((l) => !(BERLIN.includes((l.name || '').trim().toLowerCase()) && (!l.city || l.city === 'Berlin')));
+        d.cleanup_berlin_2026_11 = before - d.leads.length;
+        localStorage.setItem(STORE_KEY, JSON.stringify(d));
+      }
       return d;
     }
   } catch { /* leer */ }
