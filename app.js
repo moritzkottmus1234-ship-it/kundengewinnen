@@ -161,7 +161,7 @@ function newLeadModal() {
 function saveLead() {
   const f = $('#leadForm'); if (!f.reportValidity()) return;
   const v = Object.fromEntries(new FormData(f));
-  const lead = { id: uid(), name: v.name.trim(), city: v.city.trim(), phone: v.phone.trim(), email: v.email.trim(), website: v.website.trim(), notes: [], created: new Date().toISOString(),
+  const lead = { id: uid(), listId: cur('lead'), name: v.name.trim(), city: v.city.trim(), phone: v.phone.trim(), email: v.email.trim(), website: v.website.trim(), notes: [], created: new Date().toISOString(),
     callback: v.cbPreset === 'custom' ? (v.cbCustom || null) : v.cbPreset ? presetDate(v.cbPreset) : null };
   if (v.note.trim()) addNote(lead, v.note.trim());
   db.leads.push(lead);
@@ -176,7 +176,8 @@ function convertModal(id) {
       <label class="full">Deal-Titel<input name="title" value="${esc(l.name)}" required></label>
       <label>Wert (€)<input name="value" type="number" min="0" step="50" placeholder="0"></label>
       <label>Phase<select name="stage">${STAGES.map((s, i) => `<option value="${i}">${esc(s)}</option>`).join('')}</select></label>
-      <p class="muted full" style="margin:0;grid-column:1/-1">Kontaktdaten, Notizen und Rückruf werden übernommen. Der Lead verschwindet aus der Lead-Liste.</p>
+      <label class="full">In Deal-Liste<select name="listId">${listsOf('deal').map((d) => `<option value="${d.id}" ${d.id === cur('deal') ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>
+      <p class="muted full" style="margin:0;grid-column:1/-1">Kontaktdaten, Notizen und Rückruf werden übernommen. Der Lead verschwindet aus der Lead-Liste (und kann über „↩ Zu Leads“ zurückgeholt werden).</p>
     </form>
     <div class="modal-foot"><button class="btn" data-act="closeModal">Abbrechen</button><button class="btn btn-primary" data-act="saveConvert">In Deal umwandeln</button></div>`);
 }
@@ -184,13 +185,87 @@ function saveConvert() {
   const f = $('#dealForm'); if (!f.reportValidity()) return;
   const l = findItem('lead', f.dataset.id); if (!l) return;
   const v = Object.fromEntries(new FormData(f));
-  const deal = { ...l, id: uid(), title: v.title.trim(), value: Number(v.value) || 0, stage: Number(v.stage), status: 'open', created: new Date().toISOString(), fromLead: l.created, notes: [...(l.notes || [])] };
+  const deal = { ...l, id: uid(), listId: v.listId, fromList: listOf(l, 'lead'), title: v.title.trim(), value: Number(v.value) || 0, stage: Number(v.stage), status: 'open', created: new Date().toISOString(), fromLead: l.created, notes: [...(l.notes || [])] };
+  delete deal.updated;
   addNote(deal, `Aus Lead umgewandelt (Lead angelegt am ${fmtStamp(l.created)})`, true);
   db.deals.push(deal);
   db.leads = db.leads.filter((x) => x.id !== l.id);
   closeModal();
-  state.view = 'deals'; state.dealTab = 'open'; state.detail = { type: 'deal', id: deal.id };
+  state.view = 'deals'; state.dealTab = 'open'; state.list.deal = v.listId; state.detail = { type: 'deal', id: deal.id };
   commit('🎉 Deal erstellt: ' + deal.title);
+}
+
+/* Deal → wieder Lead (in die Liste, aus der er kam, sonst die aktuelle Lead-Liste) */
+function dealToLead(id) {
+  const d = findItem('deal', id); if (!d) return;
+  const target = (d.fromList && listById(d.fromList)?.type === 'lead') ? d.fromList : cur('lead');
+  const { title, value, stage, status, closed, fromLead, fromList, listId, updated, ...rest } = d;
+  const lead = { ...rest, id: uid(), listId: target, created: new Date().toISOString(), notes: [...(d.notes || [])] };
+  addNote(lead, `Aus Deal „${title || d.name}“ zurück zu Leads verschoben`, true);
+  db.leads.push(lead);
+  db.deals = db.deals.filter((x) => x.id !== id);
+  if (state.detail && state.detail.id === id) state.detail = { type: 'lead', id: lead.id };
+  commit(`↩ „${d.name || title}“ ist wieder ein Lead (Liste „${listById(target).name}“)`);
+}
+
+/* ---------- Listen anlegen / umbenennen / löschen ---------- */
+function listModal(type, id) {
+  const l = id ? listById(id) : null;
+  type = l ? l.type : type;
+  const src = (l && l.sources) || [];
+  const srcBox = type === 'callback' ? `
+    <div class="full src-box"><b>Rückrufe anzeigen aus:</b>
+      <label class="chk"><input type="checkbox" name="all" ${!src.length ? 'checked' : ''}> allen Listen</label>
+      ${[...listsOf('lead'), ...listsOf('deal')].map((x) => `<label class="chk"><input type="checkbox" name="src" value="${x.id}" ${src.includes(x.id) ? 'checked' : ''}> ${x.type === 'lead' ? '👤' : '💼'} ${esc(x.name)}</label>`).join('')}
+    </div>` : '';
+  openModal(`<h2>${l ? 'Liste umbenennen' : `Neue ${LIST_TYPES[type].replace(/e$/, '')}-Liste`}</h2>
+    <form id="listForm" class="form" data-type="${type}" data-id="${l ? l.id : ''}">
+      <label class="full">Name der Liste<input name="name" required maxlength="40" value="${l ? esc(l.name) : ''}" placeholder="${type === 'lead' ? 'z. B. Gyms Berlin' : type === 'deal' ? 'z. B. Angebote 2027' : 'z. B. Rückrufe Gyms'}"></label>
+      ${srcBox}
+    </form>
+    <div class="modal-foot"><button class="btn" data-act="closeModal">Abbrechen</button><button class="btn btn-primary" data-act="saveList">${l ? 'Speichern' : 'Liste anlegen'}</button></div>`);
+  const f = $('#listForm');
+  f.addEventListener('change', (e) => {
+    if (e.target.name === 'all' && e.target.checked) $$('input[name=src]', f).forEach((c) => { c.checked = false; });
+    if (e.target.name === 'src' && e.target.checked) { const a = $('input[name=all]', f); if (a) a.checked = false; }
+  });
+}
+function saveList() {
+  const f = $('#listForm'); if (!f.reportValidity()) return;
+  const name = f.elements.name.value.trim(), type = f.dataset.type;
+  const sources = type === 'callback' ? $$('input[name=src]:checked', f).map((c) => c.value) : undefined;
+  let l = f.dataset.id && listById(f.dataset.id);
+  if (l) { l.name = name; if (sources) l.sources = sources; }
+  else { l = { id: 'list_' + uid(), type, name, ...(sources ? { sources } : {}) }; db.lists.push(l); }
+  closeModal();
+  state.view = VIEW_OF[type]; state.list[type] = l.id; state.filter = 'all'; state.search = ''; state.city = '';
+  commit(f.dataset.id ? `Liste heißt jetzt „${name}“` : `Liste „${name}“ angelegt`);
+}
+function deleteListModal(id) {
+  const l = listById(id); if (!l) return;
+  const others = listsOf(l.type).filter((x) => x.id !== id);
+  if (!others.length) { toast('Die letzte Liste kann nicht gelöscht werden – benenne sie stattdessen um.'); return; }
+  const arr = l.type === 'lead' ? db.leads : l.type === 'deal' ? db.deals : [];
+  const n = arr.filter((x) => listOf(x, l.type) === id).length;
+  if (!n) { if (confirm(`Liste „${l.name}“ löschen?`)) removeList(id, null); return; }
+  openModal(`<h2>Liste „${esc(l.name)}“ löschen</h2>
+    <div class="modal-body"><p>In der Liste sind <b>${n} ${l.type === 'lead' ? 'Leads' : 'Deals'}</b>. Was soll mit ihnen passieren?</p>
+      <label>Verschieben nach<select id="moveTo">${others.map((o) => `<option value="${o.id}">${esc(o.name)}</option>`).join('')}</select></label></div>
+    <div class="modal-foot"><button class="btn" data-act="closeModal">Abbrechen</button>
+      <button class="btn btn-danger" data-act="removeList" data-id="${id}" data-mode="delete">Liste + ${n} Einträge löschen</button>
+      <button class="btn btn-primary" data-act="removeList" data-id="${id}" data-mode="move">Einträge verschieben</button></div>`);
+}
+function removeList(id, mode) {
+  const l = listById(id); if (!l) return;
+  if (l.type === 'lead' || l.type === 'deal') {
+    const key = l.type === 'lead' ? 'leads' : 'deals';
+    if (mode === 'delete') db[key] = db[key].filter((x) => listOf(x, l.type) !== id);
+    else if (mode === 'move') { const to = $('#moveTo').value; db[key].forEach((x) => { if (listOf(x, l.type) === id) x.listId = to; }); }
+  }
+  for (const c of listsOf('callback')) if (c.sources) c.sources = c.sources.filter((s) => s !== id);
+  db.lists = db.lists.filter((x) => x.id !== id);
+  closeModal();
+  commit(`Liste „${l.name}“ gelöscht`);
 }
 
 /* ---------- Detail ---------- */
@@ -236,26 +311,36 @@ document.addEventListener('click', (e) => {
         clearTimeout(el._t); el._t = setTimeout(() => { el.classList.remove('armed'); el.textContent = '🗑'; }, 4000);
         break;
       }
-      const idx = db.leads.findIndex((x) => x.id === id); if (idx < 0) break;
-      const [gone] = db.leads.splice(idx, 1);
-      lastDeleted = { lead: gone, idx };
+      const key = type === 'deal' ? 'deals' : 'leads';
+      const idx = db[key].findIndex((x) => x.id === id); if (idx < 0) break;
+      const [gone] = db[key].splice(idx, 1);
+      lastDeleted = { key, item: gone, idx };
       if (state.detail && state.detail.id === id) state.detail = null;
       saveDb(); render();
-      toastUndo(`„${gone.name || 'Lead'}“ gelöscht`);
+      toastUndo(`„${gone.title || gone.name || (key === 'deals' ? 'Deal' : 'Lead')}“ gelöscht`);
       break;
     }
     case 'undoDelete': {
       if (!lastDeleted) break;
-      db.leads.splice(Math.min(lastDeleted.idx, db.leads.length), 0, lastDeleted.lead);
-      const n = lastDeleted.lead.name; lastDeleted = null;
+      const arr = db[lastDeleted.key];
+      arr.splice(Math.min(lastDeleted.idx, arr.length), 0, lastDeleted.item);
+      const n = lastDeleted.item.title || lastDeleted.item.name; lastDeleted = null;
       el.closest('.toast')?.remove();
       commit(`„${n}“ wiederhergestellt`); break;
     }
+    case 'dealToLead': dealToLead(id); break;
+    case 'pickList': state.view = VIEW_OF[type]; state.list[type] = id; state.filter = 'all'; state.search = ''; state.city = ''; closePopover(); render(); window.scrollTo(0, 0); break;
+    case 'newList': listModal(type); break;
+    case 'editList': listModal(null, id); break;
+    case 'saveList': saveList(); break;
+    case 'deleteList': deleteListModal(id); break;
+    case 'removeList': removeList(id, el.dataset.mode); break;
     case 'deleteCity': {
       const c = state.city; if (!c) break;
-      const n = db.leads.filter((l) => cityOf(l) === c).length;
-      if (!n || !confirm(`Alle ${n} Leads aus ${c} löschen?\n\nDeals bleiben erhalten. Das lässt sich nicht rückgängig machen (außer über ein vorher gesichertes Backup).`)) break;
-      db.leads = db.leads.filter((l) => cityOf(l) !== c);
+      const inCur = (l) => cityOf(l) === c && inList(l, 'lead');
+      const n = db.leads.filter(inCur).length;
+      if (!n || !confirm(`Alle ${n} Leads aus ${c} in der Liste „${listById(cur('lead')).name}“ löschen?\n\nDeals bleiben erhalten. Das lässt sich nicht rückgängig machen (außer über ein vorher gesichertes Backup).`)) break;
+      db.leads = db.leads.filter((l) => !inCur(l));
       state.city = ''; state.detail = null;
       commit(`${n} Leads aus ${c} gelöscht`); break;
     }
@@ -330,6 +415,11 @@ document.addEventListener('input', (e) => { if (e.target.id === 'search') { stat
 /* Felder im Detail-Panel speichern */
 document.addEventListener('change', (e) => {
   if (e.target.id === 'cityFilter') { state.city = e.target.value; render(); return; }
+  if (e.target.classList.contains('list-pick')) {
+    const t = e.target.dataset.type;
+    if (e.target.value === '__new') { e.target.value = cur(t); listModal(t); return; }
+    state.list[t] = e.target.value; state.filter = 'all'; state.search = ''; state.city = ''; render(); return;
+  }
   const f = e.target.dataset?.field; if (!f) return;
   const it = currentItem(); if (!it) return;
   let v = e.target.value.trim();
@@ -386,8 +476,10 @@ $('#fileCsv').addEventListener('change', async (e) => {
     for (const f of ['city', 'website', 'email']) if (!old[f] && l[f]) { old[f] = l[f]; ch = true; }
     if (ch) updated++;
   }
+  const target = cur('lead');
+  fresh.forEach((l) => { l.listId = target; });
   db.leads.push(...fresh);
-  commit(`${fresh.length} Leads importiert${leads.length > fresh.length ? ` (${leads.length - fresh.length} schon vorhanden${updated ? `, davon ${updated} ergänzt` : ''})` : ''}`);
+  commit(`${fresh.length} Leads in „${listById(target).name}“ importiert${leads.length > fresh.length ? ` (${leads.length - fresh.length} schon vorhanden${updated ? `, davon ${updated} ergänzt` : ''})` : ''}`);
 });
 $('#fileJson').addEventListener('change', async (e) => {
   const file = e.target.files[0]; e.target.value = ''; if (!file) return;
@@ -395,7 +487,7 @@ $('#fileJson').addEventListener('change', async (e) => {
     const d = JSON.parse(await file.text());
     if (!Array.isArray(d.leads) || !Array.isArray(d.deals)) throw new Error();
     if (!confirm(`Backup laden? Aktuelle Daten (${db.leads.length} Leads, ${db.deals.length} Deals) werden ersetzt durch ${d.leads.length} Leads und ${d.deals.length} Deals.`)) return;
-    db = d; state.detail = null; commit('Backup geladen');
+    db = ensureLists(d); state.detail = null; commit('Backup geladen');
   } catch { toast('Datei ist kein gültiges Backup', true); }
 });
 

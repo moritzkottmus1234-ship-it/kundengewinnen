@@ -5,6 +5,8 @@ const AUTH_HASH = '284a1aee9a51fcdbef10fbb9f4ff39c93d3e6c5008d5b9f345becd47d37d9
 const STORE_KEY = 'kg_data_v1';
 const SESSION_KEY = 'kg_session';
 const STAGES = ['Kontaktiert', 'Demo bauen', 'Demo fertig (anrufen)', 'Angebot gesendet', 'Verhandlung'];
+const LIST_TYPES = { lead: 'Leads', deal: 'Deals', callback: 'Rückrufe' };
+const DEFAULT_LIST = { lead: 'leads', deal: 'deals', callback: 'callbacks' };
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -37,20 +39,38 @@ function loadDb() {
         d.cleanup_berlin_2026_11 = before - d.leads.length;
         localStorage.setItem(STORE_KEY, JSON.stringify(d));
       }
+      ensureLists(d);
       return d;
     }
   } catch { /* leer */ }
-  return { leads: [], deals: [] };
+  return ensureLists({ leads: [], deals: [] });
+}
+
+/* ---------- Listen (mehrere Lead-, Deal- und Rückruf-Listen, umbenennbar) ---------- */
+function ensureLists(d) {
+  d.lists = Array.isArray(d.lists) ? d.lists : [];
+  for (const [type, id] of Object.entries(DEFAULT_LIST)) {
+    if (!d.lists.some((l) => l.type === type)) d.lists.push({ id, type, name: LIST_TYPES[type], ...(type === 'callback' ? { sources: [] } : {}) });
+  }
+  return d;
+}
+const listsOf = (type) => db.lists.filter((l) => l.type === type);
+function listById(id) { return db.lists.find((l) => l.id === id); }
+/* Zu welcher Liste gehört ein Lead/Deal? (ältere Einträge ohne listId → erste Liste des Typs) */
+function listOf(item, type) {
+  const l = item.listId && listById(item.listId);
+  return l && l.type === type ? l.id : (listsOf(type).find((x) => x.id === DEFAULT_LIST[type]) || listsOf(type)[0]).id;
 }
 /* Änderungen erkennen: jedes geänderte Element bekommt einen Zeitstempel,
    gelöschte Elemente einen „Grabstein“ – damit Handy und PC sauber zusammengeführt werden. */
 const itemKey = (it) => { const { updated, notifiedFor, ...rest } = it; return JSON.stringify(rest); };
-function snapshotOf(d) { const m = new Map(); for (const it of [...d.leads, ...d.deals]) m.set(it.id, itemKey(it)); return m; }
+const allTracked = (d) => [...d.leads, ...d.deals, ...(d.lists || [])];
+function snapshotOf(d) { const m = new Map(); for (const it of allTracked(d)) m.set(it.id, itemKey(it)); return m; }
 let snap = snapshotOf(db);
 function stampChanges() {
   const now = Date.now(), cur = new Map();
   db.deleted = db.deleted || {};
-  for (const it of [...db.leads, ...db.deals]) {
+  for (const it of allTracked(db)) {
     const k = itemKey(it);
     if (snap.get(it.id) !== k) it.updated = now;
     cur.set(it.id, k);
@@ -65,7 +85,7 @@ function saveDb() {
 }
 /* Daten von außen übernehmen (z. B. nach dem Abgleich) – ohne neue Zeitstempel */
 function replaceDb(next) {
-  db = next;
+  db = ensureLists(next);
   db.deleted = db.deleted || {};
   snap = snapshotOf(db);
   localStorage.setItem(STORE_KEY, JSON.stringify(db));

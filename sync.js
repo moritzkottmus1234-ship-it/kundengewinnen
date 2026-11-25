@@ -67,7 +67,8 @@ const Sync = (() => {
     const limit = Date.now() - 180 * 864e5;
     for (const id in deleted) if (deleted[id] < limit) delete deleted[id];
     const deals = pick(local.deals, remote.deals);
-    return { ...remote, ...local, leads: dedupe(pick(local.leads, remote.leads), deals), deals, deleted };
+    const lists = pick(local.lists, remote.lists);
+    return { ...remote, ...local, leads: dedupe(pick(local.leads, remote.leads), deals), deals, lists, deleted };
   }
 
   /* Doppelte Firmen (gleicher Name + Telefon, z. B. auf zwei Geräten importiert) zusammenfassen.

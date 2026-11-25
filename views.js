@@ -1,7 +1,31 @@
 'use strict';
 /* Kundengewinnen – Ansichten */
 
-const state = { view: 'leads', filter: 'all', search: '', city: '', dealTab: 'open', detail: null };
+const state = { view: 'leads', filter: 'all', search: '', city: '', dealTab: 'open', detail: null, list: { lead: 'leads', deal: 'deals', callback: 'callbacks' } };
+const VIEW_OF = { lead: 'leads', deal: 'deals', callback: 'callbacks' };
+const TYPE_OF = { leads: 'lead', deals: 'deal', callbacks: 'callback' };
+/* aktuelle Liste eines Typs (fällt auf die erste zurück, falls gelöscht) */
+function cur(type) {
+  const l = listById(state.list[type]);
+  if (!l || l.type !== type) state.list[type] = listsOf(type)[0].id;
+  return state.list[type];
+}
+const inList = (item, type) => listOf(item, type) === cur(type);
+/* Rückruf-Liste: zeigt Rückrufe aus den gewählten Lead-/Deal-Listen (leer = alle) */
+function inCbList(cbl, x) {
+  const src = (cbl && cbl.sources) || [];
+  return !src.length || src.includes(listOf(x.item, x.type));
+}
+function listHead(type) {
+  const l = listById(cur(type));
+  const many = listsOf(type).length > 1;
+  return `<h1 class="list-title">${esc(l.name)}</h1>
+    <button class="btn btn-ghost btn-sm icon-btn" data-act="editList" data-id="${l.id}" title="Liste umbenennen">✎</button>
+    ${many ? `<button class="btn btn-ghost btn-sm icon-btn" data-act="deleteList" data-id="${l.id}" title="Liste löschen">🗑</button>` : ''}
+    <select class="search list-pick" data-type="${type}" title="Liste wechseln / neue Liste">
+      ${listsOf(type).map((x) => `<option value="${x.id}" ${x.id === l.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}
+      <option value="__new">＋ Neue Liste …</option></select>`;
+}
 const cityOf = (item) => (item.city || '').trim();
 function cityList() {
   const s = new Set([...db.leads, ...db.deals].map(cityOf).filter(Boolean));
@@ -49,7 +73,7 @@ function cbSortKey(item) { return item.callback ? new Date(item.callback).getTim
 
 /* ---------- Leads ---------- */
 function renderLeads() {
-  const all = db.leads.filter(matchCity);
+  const all = db.leads.filter((l) => inList(l, 'lead') && matchCity(l));
   const cnt = (f) => all.filter((l) => { const o = state.filter; state.filter = f; const r = matchFilter(l); state.filter = o; return r; }).length;
   const list = all.filter((l) => matchFilter(l) && matchSearch(l))
     .sort((a, b) => cbSortKey(a) - cbSortKey(b) || (b.created > a.created ? 1 : -1));
@@ -57,7 +81,7 @@ function renderLeads() {
 
   return `
   <div class="view-head">
-    <h1>Leads</h1>
+    ${listHead('lead')}
     <input class="search" id="search" placeholder="Suchen (Name, Stadt, Telefon, Notiz …)" value="${esc(state.search)}">
     ${citySelect()}
     ${state.city ? `<button class="btn btn-danger" data-act="deleteCity" title="Alle Leads dieser Stadt löschen">🗑 Alle aus ${esc(state.city)} löschen</button>` : ''}
@@ -89,7 +113,7 @@ function renderLeads() {
           <td data-label="" class="row-acts"><button class="btn btn-sm btn-deal" data-act="convert" data-id="${l.id}" title="In Deal umwandeln">→ Deal</button><button class="btn btn-sm btn-del" data-act="rowDelete" data-id="${l.id}" title="Lead löschen (zum Bestätigen nochmal klicken)" aria-label="Lead löschen">🗑</button></td>
         </tr>`).join('')}
       </tbody>
-    </table>` : `<div class="empty">${all.length ? 'Keine Leads für diesen Filter.' : 'Noch keine Leads. Lege oben rechts den ersten Lead an oder importiere eine CSV-Datei.'}</div>`}
+    </table>` : `<div class="empty">${all.length ? 'Keine Leads für diesen Filter.' : 'Diese Liste ist noch leer. Lege oben rechts den ersten Lead an oder importiere eine CSV-Datei.'}</div>`}
   </div>`;
 }
 
@@ -102,13 +126,18 @@ function dealCard(d) {
     <div class="sub">${esc(d.name)}${cityOf(d) ? ' · 📍 ' + esc(cityOf(d)) : ''}${d.phone ? ' · ' + esc(d.phone) : ''}</div>
     <div class="row"><span class="val">${euro(d.value)}</span>${cbBadge(d, 'deal')}</div>
     ${n ? `<div class="note-chip"><span class="txt">${esc(n.text)}</span></div>` : ''}
+    <div class="card-acts">${dealActs(d)}</div>
   </div>`;
 }
+function dealActs(d) {
+  return `<button class="btn btn-sm" data-act="dealToLead" data-id="${d.id}" title="Deal wieder zu einem Lead machen">↩ Zu Leads</button><button class="btn btn-sm btn-del" data-act="rowDelete" data-type="deal" data-id="${d.id}" title="Deal löschen (zum Bestätigen nochmal klicken)" aria-label="Deal löschen">🗑</button>`;
+}
 function renderDeals() {
-  const open = db.deals.filter((d) => d.status === 'open' && matchSearch(d) && matchCity(d));
+  const mine = db.deals.filter((d) => inList(d, 'deal') && matchSearch(d) && matchCity(d));
+  const open = mine.filter((d) => d.status === 'open');
   const tab = (k, l, n) => `<button class="tab ${state.dealTab === k ? 'active' : ''}" data-act="dealTab" data-tab="${k}">${l} (${n})</button>`;
-  const won = db.deals.filter((d) => d.status === 'won' && matchSearch(d));
-  const lost = db.deals.filter((d) => d.status === 'lost' && matchSearch(d));
+  const won = mine.filter((d) => d.status === 'won');
+  const lost = mine.filter((d) => d.status === 'lost');
   let body;
   if (state.dealTab === 'open') {
     body = `<div class="board">${STAGES.map((s, i) => {
@@ -128,12 +157,12 @@ function renderDeals() {
         <td data-label="Telefon">${d.phone ? `<a href="${esc(telHref(d.phone))}">${esc(d.phone)}</a>` : DASH}</td>
         <td data-label="Wert">${euro(d.value)}</td>
         <td data-label="Datum">${d.closed ? fmtStamp(d.closed) : DASH}</td>
-        <td><button class="btn btn-sm" data-act="reopen" data-id="${d.id}">Wieder öffnen</button></td>
+        <td class="row-acts"><button class="btn btn-sm" data-act="reopen" data-id="${d.id}">Wieder öffnen</button> ${dealActs(d)}</td>
       </tr>`).join('')}</tbody></table>` : '<div class="empty">Keine Deals.</div>'}</div>`;
   }
   return `
   <div class="view-head">
-    <h1>Deals</h1>
+    ${listHead('deal')}
     <div class="tabs">${tab('open', 'Pipeline', open.length)}${tab('won', 'Gewonnen', won.length)}${tab('lost', 'Verloren', lost.length)}</div>
     <input class="search" id="search" placeholder="Deals suchen …" value="${esc(state.search)}">
     ${citySelect()}
@@ -141,7 +170,7 @@ function renderDeals() {
     <span class="muted">Offen gesamt: <b>${euro(open.reduce((t, d) => t + (Number(d.value) || 0), 0))}</b></span>
   </div>
   ${body}
-  ${state.dealTab === 'open' && !db.deals.length ? '<p class="muted">Deals entstehen, indem du bei einem Lead auf „→ Deal“ klickst. Karten kannst du per Ziehen in die nächste Phase verschieben.</p>' : ''}`;
+  ${state.dealTab === 'open' && !mine.length ? '<p class="muted">Deals entstehen, indem du bei einem Lead auf „→ Deal“ klickst. Karten kannst du per Ziehen in die nächste Phase verschieben.</p>' : ''}`;
 }
 
 /* ---------- Rückrufe ---------- */
@@ -149,7 +178,9 @@ function allOpenItems() {
   return [...db.leads.map((x) => ({ type: 'lead', item: x })), ...db.deals.filter((d) => d.status === 'open').map((x) => ({ type: 'deal', item: x }))];
 }
 function renderCallbacks() {
-  const items = allOpenItems().filter((x) => x.item.callback && matchSearch(x.item) && matchCity(x.item)).sort((a, b) => cbSortKey(a.item) - cbSortKey(b.item));
+  const cbl = listById(cur('callback'));
+  const items = allOpenItems().filter((x) => x.item.callback && inCbList(cbl, x) && matchSearch(x.item) && matchCity(x.item)).sort((a, b) => cbSortKey(a.item) - cbSortKey(b.item));
+  const srcNames = (cbl.sources || []).map((id) => listById(id)?.name).filter(Boolean);
   const groups = [
     ['overdue', '⚠ Überfällig'], ['today', '📞 Heute'], ['tomorrow', 'Morgen'], ['week', 'Diese Woche'], ['later', 'Später'],
   ];
@@ -180,12 +211,13 @@ function renderCallbacks() {
   }).join('');
   return `
   <div class="view-head">
-    <h1>Rückrufe</h1>
+    ${listHead('callback')}
     <input class="search" id="search" placeholder="Suchen …" value="${esc(state.search)}">
     ${citySelect()}
     <span class="spacer"></span>
     ${'Notification' in window && Notification.permission === 'default' ? '<button class="btn" data-act="notify">🔔 Erinnerungen im Browser erlauben</button>' : ''}
   </div>
+  <p class="muted list-src">Zeigt Rückrufe aus: <b>${srcNames.length ? srcNames.map(esc).join(', ') : 'allen Lead- und Deal-Listen'}</b> · <button class="link-btn" data-act="editList" data-id="${cbl.id}">ändern</button></p>
   ${html || '<div class="table-wrap"><div class="empty">Keine geplanten Rückrufe. 🎉</div></div>'}`;
 }
 
@@ -215,6 +247,7 @@ function renderDrawer() {
         ${type === 'lead' ? `<button class="btn btn-primary" data-act="convert" data-id="${it.id}">→ In Deal umwandeln</button>` : ''}
         ${type === 'deal' && it.status === 'open' ? `<button class="btn btn-deal" data-act="won" data-id="${it.id}">🏆 Gewonnen</button><button class="btn" data-act="lost" data-id="${it.id}">Verloren</button>` : ''}
         ${type === 'deal' && it.status !== 'open' ? `<button class="btn" data-act="reopen" data-id="${it.id}">Wieder öffnen</button>` : ''}
+        ${type === 'deal' ? `<button class="btn" data-act="dealToLead" data-id="${it.id}">↩ Zurück zu Leads</button>` : ''}
       </div>
 
       <div class="section">
@@ -253,7 +286,8 @@ function renderDrawer() {
           <label>Stadt<input data-field="city" value="${esc(it.city)}" list="cityOptions"></label>
           <label>Telefon<input data-field="phone" type="tel" value="${esc(it.phone)}"></label>
           <label>E-Mail<input data-field="email" type="email" value="${esc(it.email)}"></label>
-          <label class="full">Website<input data-field="website" value="${esc(it.website)}"></label>
+          <label>Website<input data-field="website" value="${esc(it.website)}"></label>
+          <label>Liste<select data-field="listId">${listsOf(type).map((l) => `<option value="${l.id}" ${listOf(it, type) === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>
         </div>
         <p class="muted" style="font-size:12px">Angelegt: ${fmtStamp(it.created)} · Änderungen werden automatisch gespeichert.</p>
       </div>
@@ -264,13 +298,38 @@ function renderDrawer() {
 }
 
 /* ---------- Gesamt ---------- */
+function renderNav() {
+  const open = allOpenItems();
+  const isDue = (x) => ['overdue', 'today'].includes(cbStatus(x.item.callback));
+  const count = {
+    lead: (l) => db.leads.filter((x) => listOf(x, 'lead') === l.id).length,
+    deal: (l) => db.deals.filter((x) => x.status === 'open' && listOf(x, 'deal') === l.id).length,
+    callback: (l) => open.filter((x) => isDue(x) && inCbList(l, x)).length,
+  };
+  const total = { lead: db.leads.length, deal: db.deals.filter((d) => d.status === 'open').length, callback: open.filter(isDue).length };
+  const ICO = { lead: '👤', deal: '💼', callback: '📞' };
+  $('#navLists').innerHTML = Object.keys(LIST_TYPES).map((type) => {
+    const view = VIEW_OF[type], alert = type === 'callback';
+    const subs = listsOf(type).map((l) => {
+      const n = count[type](l);
+      const active = state.view === view && cur(type) === l.id;
+      return `<div class="nav-sub ${active ? 'active' : ''}">
+        <button class="nav-sub-btn" data-act="pickList" data-type="${type}" data-id="${l.id}" title="${esc(l.name)}"><span class="nav-sub-name">${esc(l.name)}</span>${n ? `<span class="count ${alert ? 'count-alert' : ''}">${n}</span>` : ''}</button>
+        <button class="nav-edit" data-act="editList" data-id="${l.id}" title="„${esc(l.name)}“ umbenennen">✎</button>
+      </div>`;
+    }).join('');
+    return `<div class="nav-group">
+      <button class="nav-item ${state.view === view ? 'active' : ''}" data-view="${view}"><span class="ico">${ICO[type]}</span><span class="nav-label">${LIST_TYPES[type]}</span>
+        <span class="count ${alert ? 'count-alert' : ''}" ${alert && !total[type] ? 'hidden' : ''}>${total[type]}</span></button>
+      <div class="nav-subs">${subs}<button class="nav-add" data-act="newList" data-type="${type}">＋ Neue ${type === 'callback' ? 'Rückruf' : type === 'deal' ? 'Deal' : 'Lead'}-Liste</button></div>
+    </div>`;
+  }).join('');
+}
 function updateCounts() {
   const open = allOpenItems();
   const overdue = open.filter((x) => cbStatus(x.item.callback) === 'overdue').length;
   const due = overdue + open.filter((x) => cbStatus(x.item.callback) === 'today').length;
-  $('#cntLeads').textContent = db.leads.length;
-  $('#cntDeals').textContent = db.deals.filter((d) => d.status === 'open').length;
-  const c = $('#cntDue'); c.textContent = due; c.hidden = !due;
+  renderNav();
   document.title = (due ? `(${due}) ` : '') + 'Kundengewinnen';
   const b = $('#dueBanner');
   if (overdue && state.view !== 'callbacks') {
@@ -281,7 +340,6 @@ function updateCounts() {
 function render() {
   const searchHadFocus = document.activeElement && document.activeElement.id === 'search';
   const pos = searchHadFocus ? document.activeElement.selectionStart : 0;
-  $$('.nav-item[data-view]').forEach((n) => n.classList.toggle('active', n.dataset.view === state.view));
   $('#view').innerHTML = state.view === 'deals' ? renderDeals() : state.view === 'callbacks' ? renderCallbacks() : renderLeads();
   if (searchHadFocus) { const s = $('#search'); s.focus(); s.setSelectionRange(pos, pos); }
   $('#cityOptions').innerHTML = [...new Set(['Köln', 'Berlin', ...cityList()])].map((c) => `<option value="${esc(c)}">`).join('');
